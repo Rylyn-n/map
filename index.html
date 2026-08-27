@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>沖繩7天行程地圖（真實地形）</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  #toolbar {
+    position: absolute; top: 10px; right: 10px; z-index: 1000;
+    background: white; padding: 10px 14px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 14px;
+  }
+  #toolbar button {
+    background: #2E75B6; color: white; border: none; padding: 8px 14px;
+    border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+  #toolbar button:hover { background: #1F4E78; }
+  #status { margin-top: 6px; font-size: 12px; color: #666; }
+  #map { position: absolute; top:0; bottom:0; left:0; right:0; }
+
+  .legend {
+    position: absolute; bottom: 20px; left: 10px; z-index: 1000;
+    background: white; padding: 10px 14px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 13px; line-height: 1.7;
+    max-width: 260px;
+  }
+  .legend .title { font-weight: bold; margin-bottom: 4px; display:flex; justify-content:space-between; align-items:center; }
+  .legend .reset-btn {
+    font-size: 11px; color: #2E75B6; cursor: pointer; border: 1px solid #2E75B6;
+    border-radius: 4px; padding: 1px 6px; background: white;
+  }
+  .legend .reset-btn:hover { background: #EAF2FA; }
+  .day-item {
+    cursor: pointer; padding: 3px 4px; border-radius: 5px;
+    display: flex; align-items: center; transition: background 0.15s;
+  }
+  .day-item:hover { background: #f0f0f0; }
+  .day-item.active { background: #e6f0fa; font-weight: bold; }
+  .day-item .dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; flex-shrink:0; }
+
+  .leaflet-popup-content img {
+    width: 100%; max-width: 220px; height: 130px; object-fit: cover;
+    border-radius: 6px; margin-top: 6px; display:block;
+  }
+  .leaflet-popup-content { margin: 10px 12px; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button onclick="exportMap()">📷 匯出目前畫面為圖片</button>
+  <div id="status">滑鼠移到天數可預覽，點擊天數會持續標示直到再次點擊或按「顯示全部」</div>
+</div>
+
+<div id="map"></div>
+
+<div class="legend" id="legend"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-image/0.0.4/leaflet-image.js"></script>
+<script>
+const dayColors = {
+  1: "#4E79A7", 2: "#F28E2B", 3: "#E15759", 4: "#76B7B2",
+  5: "#59A14F", 6: "#EDC948", 7: "#B07AA1"
+};
+const dayLabels = {
+  1: "Day1 抵達．國際通", 2: "Day2 波上宮．瀨長島", 3: "Day3 北部一日遊",
+  4: "Day4 首里城．國際通", 5: "Day5 換飯店．美國村．來客夢",
+  6: "Day6 中部歷史散策", 7: "Day7 賦歸"
+};
+
+// [名稱, 緯度, 經度, 天數, 備註, 照片網址(可為空字串)]
+const points = [
+  ["那霸機場", 26.2001297, 127.6466452, 1, "17:35抵達 / Day7 10:40回程",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBJcVITAdbg1DlIkAMEln9ad_ui1nge3A2xWOP66Qt1J32NFQgtJMlbLTuqX6FB8hDZLvJ0KAIU6Opccal_QmmXCxx9yqNsGTNktCZPTaueWe_6eY9B8xodQp8Wsp5CUNCO8GlviYTdzV5ngoU=s800"],
+  ["Hewitt Resort Naha", 26.2180737, 127.695838, 1, "入住4晚",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjCOpnKJfEnotNi3rvGm6gC5qn9zvozxqwmxWipm-zDXWxtbAolwyBfmJgkxsXUIvYQUL4Zhs9HJwmLtgiZWhlI7GdcbCs8Y3by0LvzJsK0MR2A_rdxXxZuPzTroQE8eWbOVsEWttQWBd1JuMkI=s800"],
+  ["國際通屋台村", 26.2167026, 127.690478, 1, "晚餐(居酒屋)",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjAXzEXI9yUmaVNChbdrht34YmggMcyaKajfVDf2y6uu7CRGcmW5aVHDzJtthUasKRrIpTGsq7N0ZcZW9FowDZdx1KLXqWBSVRtyF4xI8X-r57lst1vmNIEE9hH8urRgfbveest7283ywddUPRZ5I0ixGA=s800"],
+  ["波上宮", 26.2207369, 127.6711012, 2, "10:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjCKv8RlnM0JzxYGwcxoG2ebagDE5ByCcdd0Y0j3vbBNtwiz-lNzVgv55xmlAqu6P6mkTOUe3YvrzdVIi9Fqt2urqAz2LxmwWvpq7o0i0OJr8oNpjNfeI9DaaZay-WjnfSnU2A3OrDzV3c_yrd2bnjY0=s800"],
+  ["瀨長島 Umikaji Terrace", 26.1765465, 127.6404145, 2, "12:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjB2-2-dS1yg29TZrlwwSfknMYqxtxTa4lNTQwHbAeWVrYpUFL1oc-sz6byYsiIH1GVf209jITN6UspGfq0qXZHB4-S4SVF2HI5gQIrirEdxksegg_3G8GGYip8alwPQKMp2yuDfHySxLvWKhpU=s800"],
+  ["DMM Kariyushi水族館", 26.1563877, 127.6506782, 2, "15:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBrKpDw90E1P8XUUR2WBPPPPyfRLhs2HW93LNGMkHyJwZxlk9NKDL9lHJTyZsbhb3HuAGiWtnNuX1OEIvk6WwLi2DwTFmvT3O7twNYsmMpURGweiUCIxGHVPpQx57GfowGGC-RuiJnz0E0SPw=s800"],
+  ["第一牧志公設市場", 26.2145927, 127.6883013, 2, "18:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjC0JroafQ6GRwP3KNu7jiNhX6sqXm5rzRLinpP1ay0mCDM2ettzYxSLcXwaJgsbWa4nCvZmvh3zFNtv-OeefKPM44YnvKPvbweSkHf7SIDNaEriu15FfBWQseXrWn0zXObZxK2MrFMhSTQn0g=s800"],
+  ["古宇利島", 26.7072982, 128.0181686, 3, "北部一日遊",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjAiPHzX9w1FigfV_ocTOfYU1ircVlAbEEZtpOrA3kK-anrlSNdpnjfv76ClZb3kPK9PPoZRbgWX5vk_KRPrDp_XU7oMEEMxsJy_j6fDlsDLn9V6jLY_PNgjhNQGq15T12cp7Gcf1rfehnrO30w=s800"],
+  ["萬座毛", 26.5052353, 127.8504781, 3, "北部一日遊",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjDe6lMeGaTyNtoA-IvptCtSjkeN3pUla2IgD0v2bLu2QMwENDNawmbvm2T56SWUmJYv1wd_WecBRfY0q-3XuvHgbUZuzZ3hhcNMBDGQ7I1HBsU36BoVp6SBKdVJRtTrylomZdE92O4B1gOOV8pFwEDQtA=s800"],
+  ["美國村", 26.3158768, 127.7540067, 3, "Day3晚上(A) / Day5晚上(B)",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBYtJyTROG8KOF9OhSC4_J616tuL_UQKpr7bczfNQBGcvLKAcPLx3fX-K_c7w50Xq46QUIT-IA8ZtxkoELBjWSM0CLTlqQIdKproiwdDKk2L8hmezh0yN4NfdW1tV6ipOt7Iaj7Qpjif3R0yQ=s800"],
+  ["首里城", 26.2170449, 127.7194833, 4, "10:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjCoWpITYGHJrlyTuLDsjqHC6rqP9Y322_NAlimONGEFFdRkbliEVnRKXaTq1sC1tVrnGtFe_BbASbqhpMFMKINNaNbjAcgr5AZTgBJiZBOHEsycKunQHhzdA-f3L0ABUoc_62LxW7g8RwLGSrZfV8ML1A=s800"],
+  ["西來院(達摩寺)", 26.2177306, 127.7225639, 4, "12:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjA_60s8p-ThD3Ck1eV3XVE8ww3AsbWPZ-uZ6RzeNu-YoK1UwPlAre54gU-DLmA5YnlnpFC1JEB_6t4ntdDIwJvSqMTUdYaawxR4G5bdFtIdl8dSCK6d-O876yJwkOe9u3iNZkBorE8a6QMZ9GMveROT=s800"],
+  ["國際通", 26.2154644, 127.6857013, 4, "14:00", ""],
+  ["Echizen越前", 26.2272583, 127.6985794, 4, "19:00 螃蟹大餐",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjChKClPlpCCBgAF8eVFi8Bu2rGeZo_7FHR0WvG5zmTK85MiGF4YRMzGXoAH-hXHiNLOmyc0NGB6dtb0pQYRjDyTs8JlFxUtgjNctgdSzGHN4Ne6rnUo-Z12Bw0NlvhFhrfgJCO1caIPK4SLQH7ZIgln_A=s800"],
+  ["沖繩王子大飯店 海景宜野灣", 26.2769526, 127.7324471, 5, "換飯店入住2晚",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBWjqnZkDXUFCZ-avotosMiU-lTHWiUWMtis8pN2k-3EZRaFF3yuNOM8JiYbaZI9DYbS2GPd4CB20DOPd-xqdJhFWTqn5BDbweUp0FW2jkBtamluCN1sSpYyTAv38vY09be-Z4uEPjF2rq0pdTaFI2Iow=s800"],
+  ["永旺夢樂城來客夢", 26.3145118, 127.7965482, 5, "晚上(寶可夢中心)",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBYLPBrKqWF0vMQ7fq_Fq_iONznr77MBerVreDYvqp2MsLX6QElc3o0mW3DmxuPpGZZ-rO3UYdAn4LYub8SLiP3v8JOk4hSInpd1EFJESXc_DEAsohfLV5Iggk7qypKOskoHIps0po4XX-hZQ=s800"],
+  ["A&W牧港店", 26.2666387, 127.7284454, 6, "9:00早餐",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjAf_svZjVJ0sPJVt6nRsTc5GXLtRacdul1OSr7GGorbLV8YkH4glRO1wUwompyN_JlPwDW-VWuT63pTCozUosMYH9mJr3bSBfVJ6WgeT2hakHSNVeH4tk7ArlLMt1-aqB-ZD-2hOMHwnzwx=s800"],
+  ["中城城", 26.2835007, 127.7996708, 6, "13:00世界遺產",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBwb9q9dnxsXlHzLOEVmghT-AclbT-_rulMbamq2NSMu8nuhDnoEGqQjvJ4N6s1DOgosNU_NkRsyc6wDcrGbN4tXXcpMV8O9xDbRGsGy2aEkMHwmM3xkilYA_E3x4g2FElQ3Qe36lADEBCpyA=s800"],
+  ["港川外人住宅", 26.2625264, 127.714602, 6, "14:30",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjCGIi54aRpQWKGHNwXPUqv4OTJPwQSJzlLg-uMeS7YdFJtX_8LG2EJTBK47_3VVAJhK1uPKBoHY5-fNh8RHrFlcrYaqfXfSDp_a-UXOqJCKptsp4idoWqSxslChroRYa-Wois5ophHpTj01OQ=s800"],
+  ["PARCO CITY", 26.2617542, 127.6981799, 6, "18:00",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjDM3wIpL9jlRT-8vGAPEbdnrnVUpOiMFMDZPrl4PvWlnJPpUOGVhuIgNJfeNoWSXfOBaFApQ-2-biB94Jqc35BSQccdWU-tisvRxAWW3iF4xcfpSRWX-GKwjGS3qeAIRdosRgxGS2VyaAoABq54tOB3pQ=s800"],
+  ["那霸機場（賦歸）", 26.1985, 127.6490, 7, "10:40抵達 / 13:20飛機起飛回台灣",
+    "https://lh3.googleusercontent.com/place-photos/AG9NLjBJcVITAdbg1DlIkAMEln9ad_ui1nge3A2xWOP66Qt1J32NFQgtJMlbLTuqX6FB8hDZLvJ0KAIU6Opccal_QmmXCxx9yqNsGTNktCZPTaueWe_6eY9B8xodQp8Wsp5CUNCO8GlviYTdzV5ngoU=s800"]
+];
+
+const map = L.map('map', { attributionControl: true }).setView([26.42, 127.85], 10);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  crossOrigin: true,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const bounds = [];
+const markersByDay = {};   // day -> [ {marker, label(tooltip)} ]
+const allMarkers = [];
+
+points.forEach(([name, lat, lon, day, note, photoUrl]) => {
+  const color = dayColors[day];
+  const marker = L.circleMarker([lat, lon], {
+    radius: 9,
+    fillColor: color,
+    color: "#ffffff",
+    weight: 2,
+    fillOpacity: 0.95
+  }).addTo(map);
+
+  marker.bindTooltip(name, {
+    permanent: false,
+    direction: "top",
+    className: "marker-label",
+    offset: [0, -8]
+  });
+
+  const photoHtml = photoUrl
+    ? `<img src="${photoUrl}" alt="${name}" loading="lazy">`
+    : "";
+  marker.bindPopup(`<b>[Day ${day}] ${name}</b><br>${note}${photoHtml}`, { maxWidth: 240 });
+
+  bounds.push([lat, lon]);
+  if (!markersByDay[day]) markersByDay[day] = [];
+  markersByDay[day].push(marker);
+  allMarkers.push({marker, day});
+});
+
+map.fitBounds(bounds, { padding: [40, 40] });
+
+let activeDay = null;
+let pinnedDay = null;
+
+function clearHighlight() {
+  allMarkers.forEach(({marker}) => {
+    if (marker.isTooltipOpen()) marker.closeTooltip();
+    marker.setStyle({ radius: 9, fillOpacity: 0.95, weight: 2 });
+  });
+}
+
+function highlightDay(day) {
+  allMarkers.forEach(({marker, day: d}) => {
+    if (d == day) {
+      marker.setStyle({ radius: 12, fillOpacity: 1, weight: 3 });
+      marker.openTooltip();
+    } else {
+      marker.setStyle({ radius: 7, fillOpacity: 0.35, weight: 1 });
+      if (marker.isTooltipOpen()) marker.closeTooltip();
+    }
+  });
+}
+
+function updateActiveClasses(day) {
+  document.querySelectorAll('.day-item').forEach(el => {
+    el.classList.toggle('active', day != null && el.dataset.day == day);
+  });
+}
+
+function enterDay(day) {
+  activeDay = day;
+  highlightDay(day);
+  updateActiveClasses(day);
+}
+
+function leaveDay() {
+  activeDay = null;
+  if (pinnedDay != null) {
+    highlightDay(pinnedDay);
+    updateActiveClasses(pinnedDay);
+  } else {
+    clearHighlight();
+    updateActiveClasses(null);
+  }
+}
+
+function clickDay(day) {
+  if (pinnedDay === day) {
+    // 再次點同一天 -> 取消釘選
+    pinnedDay = null;
+    clearHighlight();
+    updateActiveClasses(null);
+  } else {
+    pinnedDay = day;
+    highlightDay(day);
+    updateActiveClasses(day);
+  }
+}
+
+function resetAll() {
+  pinnedDay = null;
+  activeDay = null;
+  clearHighlight();
+  updateActiveClasses(null);
+}
+
+// 建立圖例：滑過(hover)預覽，點擊(click)持續釘選
+const legendEl = document.getElementById('legend');
+let legendHtml = `<div class="title">天數圖例 <span class="reset-btn" onclick="resetAll()">顯示全部</span></div>`;
+Object.keys(dayLabels).forEach(d => {
+  if (points.some(p => p[3] == d)) {
+    legendHtml += `<div class="day-item" data-day="${d}"
+      onmouseenter="enterDay(${d})" onmouseleave="leaveDay()" onclick="clickDay(${d})">
+      <span class="dot" style="background:${dayColors[d]}"></span>${dayLabels[d]}
+    </div>`;
+  }
+});
+legendEl.innerHTML = legendHtml;
+
+function exportMap() {
+  document.getElementById('status').innerText = "匯出中，請稍候...";
+  leafletImage(map, function(err, canvas) {
+    if (err) {
+      document.getElementById('status').innerText = "匯出失敗，請改用瀏覽器截圖 (Win: Win+Shift+S / Mac: Cmd+Shift+4)";
+      console.error(err);
+      return;
+    }
+    const link = document.createElement('a');
+    link.download = '沖繩7天行程地圖_實景.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    document.getElementById('status').innerText = "已匯出！若沒反應請改用瀏覽器截圖";
+  });
+}
+</script>
+</body>
+</html>

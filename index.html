@@ -15,6 +15,7 @@
     background: #2E75B6; color: white; border: none; padding: 8px 14px;
     border-radius: 6px; cursor: pointer; font-size: 14px;
   }
+  #toolbar button { margin-right: 6px; margin-bottom: 4px; }
   #toolbar button:hover { background: #1F4E78; }
   #status { margin-top: 6px; font-size: 12px; color: #666; }
   #map { position: absolute; top:0; bottom:0; left:0; right:0; }
@@ -49,6 +50,7 @@
 <body>
 
 <div id="toolbar">
+  <button onclick="locateMe()">📍 定位我的位置</button>
   <button onclick="exportMap()">📷 匯出目前畫面為圖片</button>
   <div id="status">滑鼠移到天數可預覽，點擊天數會持續標示直到再次點擊或按「顯示全部」</div>
 </div>
@@ -249,6 +251,57 @@ function exportMap() {
     link.click();
     document.getElementById('status').innerText = "已匯出！若沒反應請改用瀏覽器截圖";
   });
+}
+
+// ---------------- 定位功能 ----------------
+let userMarker = null;
+let userAccuracyCircle = null;
+
+function locateMe() {
+  const statusEl = document.getElementById('status');
+  if (!navigator.geolocation) {
+    statusEl.innerText = "此瀏覽器不支援定位功能";
+    return;
+  }
+  statusEl.innerText = "定位中，請允許瀏覽器存取你的位置...";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy;
+
+      if (userMarker) map.removeLayer(userMarker);
+      if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
+
+      userAccuracyCircle = L.circle([lat, lon], {
+        radius: accuracy,
+        color: "#4285F4",
+        fillColor: "#4285F4",
+        fillOpacity: 0.15,
+        weight: 1
+      }).addTo(map);
+
+      userMarker = L.circleMarker([lat, lon], {
+        radius: 8,
+        fillColor: "#4285F4",
+        color: "#ffffff",
+        weight: 3,
+        fillOpacity: 1
+      }).addTo(map);
+      userMarker.bindPopup("📍 你目前的位置").openPopup();
+
+      map.setView([lat, lon], 14);
+      statusEl.innerText = "已定位到你目前的位置";
+    },
+    (err) => {
+      let msg = "無法取得你的位置";
+      if (err.code === 1) msg = "定位被拒絕，請到瀏覽器設定允許此網頁存取位置";
+      else if (err.code === 2) msg = "無法取得位置資訊（訊號問題）";
+      else if (err.code === 3) msg = "定位逾時，請再試一次";
+      statusEl.innerText = msg;
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
 }
 </script>
 </body>
